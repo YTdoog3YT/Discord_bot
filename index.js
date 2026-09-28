@@ -190,12 +190,21 @@ client.on('interactionCreate', async interaction => {
             if (logChannel) logChannel.send({ embeds: [logEmbed] });
         }
 
-        if (command === 'kick') {
+if (command === 'kick') {
             await targetMember.kick(reason);
             logEmbed.setColor('#ff9900').setTitle('👢 WYRZUCONO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}`);
             
             await interaction.reply({ content: `✅ **${targetMember.user.username}** został wykopany z serwera.`, ephemeral: true });
-            if (logChannel) logChannel.send({ embeds: [logEmbed] });
+            
+            // SUPER-SZPIEG: Diagnostyka kanału z logami
+            if (logChannel) {
+                console.log("➡️ Znaleziono kanał z logami. Próba wysłania wiadomości...");
+                logChannel.send({ embeds: [logEmbed] })
+                    .then(() => console.log("✅ Sukces! Wysłano embeda do kanału logów."))
+                    .catch(err => console.error("❌ Błąd! Nie udało się wysłać embeda na kanał logów:", err));
+            } else {
+                console.error("❌ BŁĄD KRYTYCZNY: Bot w ogóle nie widzi kanału o ID", CHANNELS.MOD_LOGS);
+            }
         }
 
         if (command === 'mute') {
