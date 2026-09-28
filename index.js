@@ -155,7 +155,7 @@ client.on('interactionCreate', async interaction => {
     const targetMember = interaction.options.getMember('uzytkownik');
     const reason = interaction.options.getString('powod') || 'Brak powodu';
     const timeString = interaction.options.getString('czas');
-    const logChannel = interaction.guild.channels.cache.get(CHANNELS.MOD_LOGS);
+    const logChannel = await interaction.guild.channels.fetch(CHANNELS.MOD_LOGS).catch(() => null);
 
     if (!targetMember) {
         return interaction.reply({ content: '❌ Nie znalazłem takiego użytkownika na serwerze.', ephemeral: true });
