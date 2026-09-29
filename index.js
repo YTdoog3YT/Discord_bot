@@ -55,8 +55,29 @@ const CHANNELS = {
     STATS_BANS: '1275939641324732447',
     VOTING: '1279160696273244373',
     AUTOROLES: '1554380315156291625',
-    COURT_CATEGORY: '1256543402749726752'
+    COURT_CATEGORY: '1256543402749726752',
+    RULES: '1256544920148119572' // Kanał regulaminu
 };
+
+// ==========================================
+// REGULAMIN SERWERA (ŁATWA EDYCJA)
+// Zmieniaj tekst poniżej. Żeby dodać nową linijkę, po prostu pisz w nowej linii.
+// ==========================================
+const REGULAMIN_SERWERA = `
+**Zasady Ogólne i Kanały Tekstowe (Czat)**
+1️⃣ Bądźmy ludźmi – szanujmy się nawzajem. Zero wyzywania, toksyczności i dram.
+2️⃣ Zakaz reklamowania innych serwerów, stron i swoich kanałów bez zgody administracji.
+3️⃣ Nie spamuj – unikajmy wysyłania tych samych wiadomości po dziesięć razy.
+4️⃣ Trzymaj się tematyki kanału (np. memy na kanale od memów).
+5️⃣ Administracja ma zawsze ostatnie słowo. W razie łamania zasad, od razu wjeżdża Sąd.
+
+**Zasady Kanałów Głosowych (Voice)**
+🔊 Nie drzyj mordy do mikrofonu i nie puszczaj przesterów (zero earrape'ów).
+🔊 Zakaz nagrywania rozmów bez zgody wszystkich obecnych na kanale.
+🔊 Używaj "Naciśnij i mów" (push-to-talk) jeśli masz w tle remont, krzyczące rodzeństwo albo echo.
+🔊 Nie skaczemy po kanałach bez sensu (zero channel hoppingu) żeby celowo kogoś wkurwiać.
+🔊 Jeśli wbijasz komuś na kanał, zachowaj kulturę.
+`;
 
 const AUTOROLES_LIST = [
     { label: '👦 Chłopak', value: '1554381536609050674', description: 'Twoja płeć' },
@@ -131,6 +152,27 @@ client.once('ready', async () => {
         { name: 'sad', description: 'Zaciągnij gracza przed oblicze administracji!', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Oskarżony', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co go sądzimy?', required: true } ] }
     ];
     await client.application.commands.set(commands).catch(console.error);
+
+    // --- AUTOMATYCZNY PANEL REGULAMINU ---
+    try {
+        const rulesChannel = client.channels.cache.get(CHANNELS.RULES);
+        if (rulesChannel) {
+            const messages = await rulesChannel.messages.fetch({ limit: 10 });
+            const hasRules = messages.some(m => m.author.id === client.user.id && m.embeds[0]?.title === '📜 Regulamin Serwera');
+            
+            if (!hasRules) {
+                const rulesEmbed = new EmbedBuilder()
+                    .setColor('#ff4757')
+                    .setTitle('📜 Regulamin Serwera')
+                    .setDescription(REGULAMIN_SERWERA)
+                    .setFooter({ text: 'Nieznajomość regulaminu nie zwalnia z jego przestrzegania!' })
+                    .setTimestamp();
+                
+                await rulesChannel.send({ embeds: [rulesEmbed] });
+                console.log('✅ Utworzono panel regulaminu!');
+            }
+        }
+    } catch (err) { console.error('Błąd z panelem regulaminu:', err); }
 
     try {
         const ticketChannel = client.channels.cache.get(CHANNELS.TICKETS);
