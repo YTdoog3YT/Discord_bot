@@ -8,7 +8,7 @@ const {
 } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
-const Parser = require('rss-parser'); // Nowy moduł do czytania nowości z neta
+const Parser = require('rss-parser');
 
 // Mikro-serwer dla UptimeRobot
 const app = express();
@@ -22,8 +22,7 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers, 
-        GatewayIntentBits.GuildModeration,
-        GatewayIntentBits.GuildVoiceStates
+        GatewayIntentBits.GuildModeration
     ]
 });
 
@@ -38,16 +37,35 @@ const CHANNELS = {
     ADMIN_CMDS: '1256544039579156541',
     MOD_LOGS: '1256544115517292616',
     YT_VIDEO: '1256545068349915217',
-    STREAMS: '1256545089606516768' // Kanał do streamów (do zrobienia)
+    STREAMS: '1256545089606516768' 
 };
 
 // ==========================================
-// AUTOMATYCZNY RADAR YOUTUBE
+// USTAWIENIA TWÓRCY (TUTAJ WPISZ SWOJE DANE!)
+// ==========================================
+const TWITCH_USERNAME = 'TTV_YTdoog3YT'; // np. 'izakoo'
+const YOUTUBE_CHANNEL_ID = 'UC1QzrYhOlcmsOhZ5BQBZIvA'; 
+
+// ==========================================
+// AUTOMAT YOUTUBE I TWITCH
 // ==========================================
 const parser = new Parser();
-const YOUTUBE_CHANNEL_ID = 'UC1QzrYhOlcmsOhZ5BQBZIvA'; // 
-const YOUTUBE_FEED_URL = `https://www.youtube.com/feeds/videos.xml?channel_id=${YOUTUBE_CHANNEL_ID}`;
-let lastVideoId = ''; // Bot zapamiętuje ostatni film, żeby nie spamować
+let lastVideoId = ''; 
+let isTwitchLive = false;
+let twitchToken = '';
+
+// Funkcja pobierająca klucz dostępu od Twitcha
+async function getTwitchToken() {
+    try {
+        if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_CLIENT_SECRET) return null;
+        const response = await fetch(`https://id.twitch.tv/oauth2/token?client_id=${process.env.TWITCH_CLIENT_ID}&client_secret=${process.env.TWITCH_CLIENT_SECRET}&grant_type=client_credentials`, { method: 'POST' });
+        const data = await response.json();
+        twitchToken = data.access_token;
+        return twitchToken;
+    } catch (err) {
+        console.error('❌ Błąd pobierania tokenu Twitch:', err);
+    }
+}
 
 client.once('ready', async () => {
     console.log(`🤖 Kombajn wjechał na pole! Zalogowano jako: ${client.user.tag}`);
@@ -59,7 +77,7 @@ client.once('ready', async () => {
             options: [
                 { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true },
                 { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co?', required: true },
-                { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas (np. 1d, 1h)', required: false }
+                { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas', required: false }
             ]
         },
         {
@@ -80,41 +98,66 @@ client.once('ready', async () => {
     ];
     await client.application.commands.set(commands).catch(console.error);
 
-    // PĘTLA YOUTUBE - SPRAWDZA CO 5 MINUT (300 000 ms)
+    // --- PĘTLA YOUTUBE (co 5 minut) ---
     setInterval(async () => {
         try {
-            if (YOUTUBE_CHANNEL_ID === 'TUTAJ_WKLEJ_ID_KANALU_YOUTUBE') return; 
-            
-            const feed = await parser.parseURL(YOUTUBE_FEED_URL);
+            if (YOUTUBE_CHANNEL_ID.includes('TUTAJ_WPISZ')) return; 
+            const feed = await parser.parseURL(`https://www.youtube.com/feeds/videos.xml?channel_id=${YOUTUBE_CHANNEL_ID}`);
             if (feed.items.length > 0) {
                 const latestVideo = feed.items[0];
-                
-                // Jeśli wykryto nowy film
                 if (lastVideoId !== latestVideo.id) {
-                    if (lastVideoId !== '') { // Nie wysyłaj przy pierwszym uruchomieniu bota
+                    if (lastVideoId !== '') { 
                         const channel = client.channels.cache.get(CHANNELS.YT_VIDEO);
                         if (channel) {
-                            const videoEmbed = new EmbedBuilder()
-                                .setColor('#ff0000')
-                                .setTitle('🔴 NOWY FILM NA KANALE!')
-                                .setDescription(`Właśnie wjechał nowy materiał: **${latestVideo.title}**\n\n🔗 [Oglądaj tutaj!](${latestVideo.link})`)
-                                .setTimestamp();
-
-                            await channel.send({ content: '@everyone', embeds: [videoEmbed] });
-                            console.log(`✅ Wysłano powiadomienie o nowym filmie: ${latestVideo.title}`);
+                            const embed = new EmbedBuilder().setColor('#ff0000').setTitle('🔴 NOWY FILM NA KANALE!').setDescription(`Właśnie wjechał nowy materiał: **${latestVideo.title}**\n\n🔗 [Oglądaj tutaj!](${latestVideo.link})`).setTimestamp();
+                            await channel.send({ content: '@everyone', embeds: [embed] });
                         }
                     }
-                    lastVideoId = latestVideo.id; // Zapisz jako znany
+                    lastVideoId = latestVideo.id; 
                 }
             }
-        } catch (err) {
-            console.error('❌ Błąd sprawdzania YouTube:', err.message);
-        }
+        } catch (err) { console.error('Błąd YouTube:', err.message); }
     }, 300000); 
+
+    // --- PĘTLA TWITCH (co 3 minuty) ---
+    setInterval(async () => {
+        try {
+            if (!process.env.TWITCH_CLIENT_ID || TWITCH_USERNAME.includes('TUTAJ_WPISZ')) return;
+            if (!twitchToken) await getTwitchToken();
+
+            const res = await fetch(`https://api.twitch.tv/helix/streams?user_login=${TWITCH_USERNAME}`, {
+                headers: { 'Client-ID': process.env.TWITCH_CLIENT_ID, 'Authorization': `Bearer ${twitchToken}` }
+            });
+
+            if (res.status === 401) { await getTwitchToken(); return; } // Odśwież token jeśli wygasł
+            
+            const data = await res.json();
+            const stream = data.data && data.data[0];
+
+            if (stream) {
+                if (!isTwitchLive) { // Zabezpieczenie przed spamowaniem - wysyła tylko raz jak włączysz live
+                    isTwitchLive = true;
+                    const channel = client.channels.cache.get(CHANNELS.STREAMS);
+                    if (channel) {
+                        const embed = new EmbedBuilder()
+                            .setColor('#9146ff')
+                            .setTitle('🟪 ODPALAMY STREAMA!')
+                            .setDescription(`Gramy w **${stream.game_name || 'coś fajnego'}**!\n\n📝 **Temat:** ${stream.title}\n🔗 **[WBIJAJ NA LIVE!](https://twitch.tv/${TWITCH_USERNAME})**`)
+                            .setImage(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${TWITCH_USERNAME.toLowerCase()}-1280x720.jpg?r=${Math.random()}`) // Miniaturka live
+                            .setTimestamp();
+                        await channel.send({ content: '@everyone', embeds: [embed] });
+                        console.log(`✅ Wysłano powiadomienie o streamie Twitch!`);
+                    }
+                }
+            } else {
+                isTwitchLive = false; // Reset gdy wyłączysz live
+            }
+        } catch (err) { console.error('Błąd Twitch:', err.message); }
+    }, 180000); // 180000 = 3 minuty
 });
 
 // ==========================================
-// POWITANIA, POŻEGNANIA I MODERACJA (Działa jak wcześniej)
+// POWITANIA, POŻEGNANIA I MODERACJA
 // ==========================================
 client.on('guildMemberAdd', member => {
     const channel = member.guild.channels.cache.get(CHANNELS.WELCOME);
@@ -173,7 +216,7 @@ client.on('interactionCreate', async interaction => {
         }
         if (command === 'mute') {
             const timeMs = parseTimeToMs(timeString);
-            if (!timeMs) return interaction.reply({ content: '❌ Podaj poprawny czas wyciszenia! Np. 10m, 1h.', ephemeral: true });
+            if (!timeMs) return interaction.reply({ content: '❌ Podaj poprawny czas wyciszenia!', ephemeral: true });
             await targetMember.timeout(timeMs, reason);
             logEmbed.setColor('#00bfff').setTitle('🔇 WYCISZONO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}\n**Czas:** ${timeString}`);
             await interaction.reply({ content: `✅ **${targetMember.user.username}** wyciszony na ${timeString}.`, ephemeral: true });
