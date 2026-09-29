@@ -19,14 +19,15 @@ const app = express();
 app.get('/', (req, res) => res.send('Kombajn działa i ma się dobrze!'));
 app.listen(process.env.PORT || 3000, () => console.log('🌐 Serwer podtrzymujący odpalony!'));
 
-// Inicjalizacja bota
+// Inicjalizacja bota (Dodano GuildPresences potrzebne do sprawdzania kto jest online!)
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers, 
-        GatewayIntentBits.GuildModeration
+        GatewayIntentBits.GuildModeration,
+        GatewayIntentBits.GuildPresences 
     ]
 });
 
@@ -43,11 +44,17 @@ const CHANNELS = {
     YT_VIDEO: '1256545068349915217',
     STREAMS: '1256545089606516768',
     TICKETS: '1256545036112232499',
-    TICKETS_CATEGORY: '1554373278418862150' // <--- Kategoria dla nowych ticketów
+    TICKETS_CATEGORY: '1554373278418862150',
+    // ETAP 3, 4, 5 - STATYSTYKI
+    STATS_TIME: '1256543516734128159',
+    STATS_ONLINE: '1256543578281480265',
+    STATS_ALL_REAL: '1275939716583129179',
+    STATS_DATE: '1275939563415670926',
+    STATS_BANS: '1275939641324732447'
 };
 
 // ==========================================
-// USTAWIENIA TWÓRCY (Pamiętaj żeby tu były Twoje dane)
+// USTAWIENIA TWÓRCY 
 // ==========================================
 const TWITCH_USERNAME = 'TUTAJ_WPISZ_NICK_Z_TWITCHA'; 
 const YOUTUBE_CHANNEL_ID = 'TUTAJ_WPISZ_ID_KANALU_YOUTUBE'; 
@@ -65,6 +72,49 @@ async function getTwitchToken() {
         twitchToken = data.access_token;
         return twitchToken;
     } catch (err) { console.error('❌ Błąd pobierania tokenu Twitch:', err); }
+}
+
+// ==========================================
+// FUNKCJA AKTUALIZUJĄCA STATYSTYKI SERWERA
+// ==========================================
+async function updateServerStats() {
+    try {
+        const guild = client.guilds.cache.first(); // Pobiera pierwszy serwer, na którym jest bot
+        if (!guild) return;
+
+        await guild.members.fetch(); // Wymusza pobranie wszystkich członków do pamięci bota
+
+        // Obliczenia
+        const realUsers = guild.members.cache.filter(m => !m.user.bot);
+        const onlineUsers = realUsers.filter(m => m.presence && m.presence.status !== 'offline' && m.presence.status !== 'invisible');
+        
+        const bans = await guild.bans.fetch();
+        const bansCount = bans.size;
+
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('pl-PL', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit' });
+        const dateString = now.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
+
+        // Pobieranie kanałów i zmiana nazw (zmienia tylko jeśli nazwa jest inna, żeby oszczędzać limity API)
+        const channelTime = guild.channels.cache.get(CHANNELS.STATS_TIME);
+        if (channelTime && channelTime.name !== `⌚ Godzina: ${timeString}`) await channelTime.setName(`⌚ Godzina: ${timeString}`);
+
+        const channelDate = guild.channels.cache.get(CHANNELS.STATS_DATE);
+        if (channelDate && channelDate.name !== `📅 Data: ${dateString}`) await channelDate.setName(`📅 Data: ${dateString}`);
+
+        const channelAll = guild.channels.cache.get(CHANNELS.STATS_ALL_REAL);
+        if (channelAll && channelAll.name !== `👥 Użytkownicy: ${realUsers.size}`) await channelAll.setName(`👥 Użytkownicy: ${realUsers.size}`);
+
+        const channelOnline = guild.channels.cache.get(CHANNELS.STATS_ONLINE);
+        if (channelOnline && channelOnline.name !== `🟢 Online: ${onlineUsers.size}`) await channelOnline.setName(`🟢 Online: ${onlineUsers.size}`);
+
+        const channelBans = guild.channels.cache.get(CHANNELS.STATS_BANS);
+        if (channelBans && channelBans.name !== `🔨 Zbanowani: ${bansCount}`) await channelBans.setName(`🔨 Zbanowani: ${bansCount}`);
+
+        console.log(`📊 Zaktualizowano statystyki serwera (Online: ${onlineUsers.size}/${realUsers.size}, Czas: ${timeString})`);
+    } catch (err) {
+        console.error('❌ Błąd aktualizacji statystyk:', err);
+    }
 }
 
 client.once('ready', async () => {
@@ -103,7 +153,15 @@ client.once('ready', async () => {
         }
     } catch (err) { console.error('Błąd z panelem ticketów:', err); }
 
-    // --- PĘTLA YOUTUBE (co 5 minut) ---
+    // Pierwsze uruchomienie statystyk od razu po starcie
+    updateServerStats();
+
+    // --- PĘTLE (Youtube, Twitch, Statystyki) ---
+    
+    // Pętla statystyk (co 6 minut = 360000 ms)
+    setInterval(updateServerStats, 360000); 
+
+    // Pętla YouTube (co 5 minut)
     setInterval(async () => {
         try {
             if (YOUTUBE_CHANNEL_ID.includes('TUTAJ_WPISZ')) return; 
@@ -124,7 +182,7 @@ client.once('ready', async () => {
         } catch (err) { console.error('Błąd YouTube:', err.message); }
     }, 300000); 
 
-    // --- PĘTLA TWITCH (co 3 minuty) ---
+    // Pętla Twitch (co 3 minuty)
     setInterval(async () => {
         try {
             if (!process.env.TWITCH_CLIENT_ID || TWITCH_USERNAME.includes('TUTAJ_WPISZ')) return;
@@ -177,7 +235,6 @@ function parseTimeToMs(timeStr) {
 // ==========================================
 client.on('interactionCreate', async interaction => {
     
-    // --- OBSŁUGA PRZYCISKÓW TICKETÓW ---
     if (interaction.isButton()) {
         
         if (interaction.customId === 'create_ticket') {
@@ -188,11 +245,10 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ content: `❌ Masz już otwarty ticket: <#${existingChannel.id}>`, ephemeral: true });
             }
 
-            // Tworzy prywatny kanał w odpowiedniej kategorii
             const ticketChannel = await interaction.guild.channels.create({
                 name: ticketName,
                 type: ChannelType.GuildText,
-                parent: CHANNELS.TICKETS_CATEGORY, // <--- Tutaj dodaliśmy kategorię!
+                parent: CHANNELS.TICKETS_CATEGORY, 
                 permissionOverwrites: [
                     { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, 
                     { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }, 
@@ -230,7 +286,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- OBSŁUGA KOMEND SLASH (Moderacja) ---
     if (interaction.isChatInputCommand()) {
         if (interaction.channelId !== CHANNELS.ADMIN_CMDS) return interaction.reply({ content: `🚫 Komendy tylko na <#${CHANNELS.ADMIN_CMDS}>!`, ephemeral: true });
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Brak uprawnień!', ephemeral: true });
