@@ -50,15 +50,10 @@ const CHANNELS = {
     STATS_ALL_REAL: '1275939716583129179',
     STATS_DATE: '1275939563415670926',
     STATS_BANS: '1275939641324732447',
-    // ETAP 6 i 7
     VOTING: '1279160696273244373',
     AUTOROLES: '1554380315156291625'
 };
 
-// ==========================================
-// KONFIGURACJA AUTORÓL (ŁATWE DODAWANIE)
-// Jeśli chcesz dodać rolę, po prostu dopisz tu linijkę!
-// ==========================================
 const AUTOROLES_LIST = [
     { label: '👦 Chłopak', value: '1554381536609050674', description: 'Twoja płeć' },
     { label: '👧 Dziewczyna', value: '1554381571799130132', description: 'Twoja płeć' },
@@ -71,7 +66,6 @@ const AUTOROLES_LIST = [
     { label: '🔴 Powiadomienia Filmy', value: '1554381803798794351', description: 'Pingi o nowych filmach' }
 ];
 
-// USTAWIENIA TWÓRCY
 const TWITCH_USERNAME = 'TUTAJ_WPISZ_NICK_Z_TWITCHA'; 
 const YOUTUBE_CHANNEL_ID = 'TUTAJ_WPISZ_ID_KANALU_YOUTUBE'; 
 
@@ -129,12 +123,10 @@ client.once('ready', async () => {
         { name: 'ban', description: 'Zbanuj użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas', required: false } ] },
         { name: 'kick', description: 'Wyrzuć użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
         { name: 'mute', description: 'Wycisz użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas (np. 10m, 1h)', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
-        // --- NOWA KOMENDA DO GŁOSOWAŃ ---
         { name: 'głosowanie', description: 'Stwórz nowe głosowanie na dedykowanym kanale', options: [ { name: 'tresc', type: ApplicationCommandOptionType.String, description: 'Treść / Pytanie w głosowaniu', required: true } ] }
     ];
     await client.application.commands.set(commands).catch(console.error);
 
-    // --- AUTOMATYCZNY PANEL TICKETÓW ---
     try {
         const ticketChannel = client.channels.cache.get(CHANNELS.TICKETS);
         if (ticketChannel) {
@@ -148,12 +140,10 @@ client.once('ready', async () => {
         }
     } catch (err) { console.error('Błąd z panelem ticketów:', err); }
 
-    // --- AUTOMATYCZNY PANEL AUTORÓL ---
     try {
         const rolesChannel = client.channels.cache.get(CHANNELS.AUTOROLES);
         if (rolesChannel) {
             const messages = await rolesChannel.messages.fetch({ limit: 10 });
-            // Sprawdza czy jest już panel autoról
             const hasRolesPanel = messages.some(m => m.author.id === client.user.id && m.components.length > 0 && m.embeds[0]?.title === '🎭 Wybierz swoje role');
             
             if (!hasRolesPanel) {
@@ -165,8 +155,8 @@ client.once('ready', async () => {
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId('autoroles_select')
                     .setPlaceholder('Rozwiń listę i wybierz...')
-                    .setMinValues(0) // Pozwala graczom usunąć wszystkie role jeśli chcą
-                    .setMaxValues(AUTOROLES_LIST.length) // Pozwala zaznaczyć wszystkie na raz
+                    .setMinValues(0) 
+                    .setMaxValues(AUTOROLES_LIST.length) 
                     .addOptions(
                         AUTOROLES_LIST.map(role => 
                             new StringSelectMenuOptionBuilder()
@@ -178,7 +168,6 @@ client.once('ready', async () => {
 
                 const row = new ActionRowBuilder().addComponents(selectMenu);
                 await rolesChannel.send({ embeds: [rolesEmbed], components: [row] });
-                console.log('✅ Utworzono nowy panel autoról!');
             }
         }
     } catch (err) { console.error('Błąd z panelem autoról:', err); }
@@ -254,16 +243,11 @@ function parseTimeToMs(timeStr) {
 
 client.on('interactionCreate', async interaction => {
     
-    // --- OBSŁUGA AUTORÓL (ROZWIJANE MENU) ---
     if (interaction.isStringSelectMenu() && interaction.customId === 'autoroles_select') {
-        // Wszystkie możliwe ID ról do rozdania przez bota
         const allAutoroleIds = AUTOROLES_LIST.map(r => r.value);
-        // ID ról, które gracz aktualnie zaznaczył
         const selectedRoles = interaction.values;
         
-        // Co dodać: to co zaznaczył
         const toAdd = selectedRoles;
-        // Co zabrać: role z listy autoról, których NIE zaznaczył
         const toRemove = allAutoroleIds.filter(id => !selectedRoles.includes(id));
         
         try {
@@ -307,73 +291,74 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    if (interaction.isChatInputCommand()) {
-        if (interaction.channelId !== CHANNELS.ADMIN_CMDS) return interaction.reply({ content: `🚫 Komendy tylko na <#${CHANNELS.ADMIN_CMDS}>!`, ephemeral: true });
-        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Brak uprawnień!', ephemeral: true });
+    if (!interaction.isChatInputCommand()) return; 
 
-        const command = interaction.commandName;
+    if (interaction.channelId !== CHANNELS.ADMIN_CMDS) {
+        return interaction.reply({ content: `🚫 Komendy tylko na <#${CHANNELS.ADMIN_CMDS}>!`, ephemeral: true });
+    }
+    
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Brak uprawnień!', ephemeral: true });
+    }
+
+    const command = interaction.commandName;
+    
+    if (command === 'głosowanie') {
+        const tresc = interaction.options?.getString('tresc') || "Brak treści. Spróbuj jeszcze raz wpisując powoli: /głosowanie [tutaj treść]";
+        const voteChannel = interaction.guild.channels.cache.get(CHANNELS.VOTING);
         
-        // --- OBSŁUGA GŁOSOWANIA ---
-        if (command === 'głosowanie') {
-            const tresc = interaction.options.getString('tresc');
-            const voteChannel = interaction.guild.channels.cache.get(CHANNELS.VOTING);
-            
-            if (!voteChannel) return interaction.reply({ content: '❌ Nie znaleziono kanału do głosowań!', ephemeral: true });
+        if (!voteChannel) return interaction.reply({ content: '❌ Nie znaleziono kanału do głosowań!', ephemeral: true });
 
-            const voteEmbed = new EmbedBuilder()
-                .setColor('#ffd700')
-                .setTitle('📊 Nowe Głosowanie!')
-                .setDescription(`**${tresc}**`)
-                .setFooter({ text: `Autor: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
-                .setTimestamp();
+        const voteEmbed = new EmbedBuilder()
+            .setColor('#ffd700')
+            .setTitle('📊 Nowe Głosowanie!')
+            .setDescription(`**${tresc}**`)
+            .setFooter({ text: `Autor: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+            .setTimestamp();
 
-            await interaction.reply({ content: '✅ Głosowanie zostało wystawione na odpowiednim kanale.', ephemeral: true });
-            const msg = await voteChannel.send({ content: '@everyone', embeds: [voteEmbed] });
-            
-            // Dodawanie reakcji
-            await msg.react('✅');
-            await msg.react('❌');
-            return;
+        await interaction.reply({ content: '✅ Głosowanie zostało wystawione na odpowiednim kanale.', ephemeral: true });
+        
+        const msg = await voteChannel.send({ content: '@everyone', embeds: [voteEmbed] });
+        await msg.react('✅');
+        await msg.react('❌');
+        return; 
+    }
+
+    const targetMember = interaction.options?.getMember('uzytkownik');
+    const reason = interaction.options?.getString('powod') || 'Brak powodu';
+    const timeString = interaction.options?.getString('czas');
+    const logChannel = await interaction.guild.channels.fetch(CHANNELS.MOD_LOGS).catch(() => null);
+
+    if (!targetMember) return interaction.reply({ content: '❌ Nie znalazłem użytkownika do zbanowania/wyrzucenia.', ephemeral: true });
+    if (!targetMember.manageable || !targetMember.bannable) return interaction.reply({ content: '❌ Ten użytkownik ma zbyt wysoką rolę!', ephemeral: true });
+
+    const logEmbed = new EmbedBuilder().setThumbnail(targetMember.user.displayAvatarURL({ dynamic: true })).setTimestamp().setFooter({ text: `Przez: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() });
+
+    try {
+        if (command === 'ban') {
+            const timeMs = parseTimeToMs(timeString);
+            await targetMember.ban({ reason });
+            logEmbed.setColor('#000000').setTitle('🔨 ZBANOWANO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}\n**Czas:** ${timeString || 'Zawsze'}`);
+            if (timeMs) setTimeout(async () => { await interaction.guild.members.unban(targetMember.id).catch(() => {}); }, timeMs);
+            await interaction.reply({ content: `✅ **${targetMember.user.username}** dostał bana.`, ephemeral: true });
+            if (logChannel) logChannel.send({ embeds: [logEmbed] });
         }
-
-        // --- MODERACJA ---
-        const targetMember = interaction.options.getMember('uzytkownik');
-        const reason = interaction.options.getString('powod') || 'Brak powodu';
-        const timeString = interaction.options.getString('czas');
-        const logChannel = await interaction.guild.channels.fetch(CHANNELS.MOD_LOGS).catch(() => null);
-
-        if (!targetMember) return interaction.reply({ content: '❌ Nie znalazłem użytkownika.', ephemeral: true });
-        if (!targetMember.manageable || !targetMember.bannable) return interaction.reply({ content: '❌ Ten użytkownik ma zbyt wysoką rolę!', ephemeral: true });
-
-        const logEmbed = new EmbedBuilder().setThumbnail(targetMember.user.displayAvatarURL({ dynamic: true })).setTimestamp().setFooter({ text: `Przez: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() });
-
-        try {
-            if (command === 'ban') {
-                const timeMs = parseTimeToMs(timeString);
-                await targetMember.ban({ reason });
-                logEmbed.setColor('#000000').setTitle('🔨 ZBANOWANO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}\n**Czas:** ${timeString || 'Zawsze'}`);
-                if (timeMs) setTimeout(async () => { await interaction.guild.members.unban(targetMember.id).catch(() => {}); }, timeMs);
-                await interaction.reply({ content: `✅ **${targetMember.user.username}** dostał bana.`, ephemeral: true });
-                if (logChannel) logChannel.send({ embeds: [logEmbed] });
-            }
-            if (command === 'kick') {
-                await targetMember.kick(reason);
-                logEmbed.setColor('#ff9900').setTitle('👢 WYRZUCONO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}`);
-                await interaction.reply({ content: `✅ **${targetMember.user.username}** wyrzucony.`, ephemeral: true });
-                if (logChannel) logChannel.send({ embeds: [logEmbed] });
-            }
-            if (command === 'mute') {
-                const timeMs = parseTimeToMs(timeString);
-                if (!timeMs) return interaction.reply({ content: '❌ Podaj poprawny czas wyciszenia!', ephemeral: true });
-                await targetMember.timeout(timeMs, reason);
-                logEmbed.setColor('#00bfff').setTitle('🔇 WYCISZONO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}\n**Czas:** ${timeString}`);
-                await interaction.reply({ content: `✅ **${targetMember.user.username}** wyciszony na ${timeString}.`, ephemeral: true });
-                if (logChannel) logChannel.send({ embeds: [logEmbed] });
-            }
-        } catch (error) {
-            console.error(error);
-            interaction.reply({ content: '❌ Błąd. Sprawdź logi.', ephemeral: true });
+        if (command === 'kick') {
+            await targetMember.kick(reason);
+            logEmbed.setColor('#ff9900').setTitle('👢 WYRZUCONO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}`);
+            await interaction.reply({ content: `✅ **${targetMember.user.username}** wyrzucony.`, ephemeral: true });
+            if (logChannel) logChannel.send({ embeds: [logEmbed] });
         }
+        if (command === 'mute') {
+            const timeMs = parseTimeToMs(timeString);
+            if (!timeMs) return interaction.reply({ content: '❌ Podaj poprawny czas wyciszenia!', ephemeral: true });
+            await targetMember.timeout(timeMs, reason);
+            logEmbed.setColor('#00bfff').setTitle('🔇 WYCISZONO GRACZA').setDescription(`**Gracz:** ${targetMember}\n**Powód:** ${reason}\n**Czas:** ${timeString}`);
+            await interaction.reply({ content: `✅ **${targetMember.user.username}** wyciszony na ${timeString}.`, ephemeral: true });
+            if (logChannel) logChannel.send({ embeds: [logEmbed] });
+        }
+    } catch (error) {
+        console.error("Błąd podczas komendy:", error);
     }
 });
 
