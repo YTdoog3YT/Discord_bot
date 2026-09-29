@@ -10,7 +10,10 @@ const {
     ButtonStyle,
     ChannelType,
     StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder
+    StringSelectMenuOptionBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
@@ -51,7 +54,8 @@ const CHANNELS = {
     STATS_DATE: '1275939563415670926',
     STATS_BANS: '1275939641324732447',
     VOTING: '1279160696273244373',
-    AUTOROLES: '1554380315156291625'
+    AUTOROLES: '1554380315156291625',
+    COURT_CATEGORY: '1256543402749726752'
 };
 
 const AUTOROLES_LIST = [
@@ -123,7 +127,8 @@ client.once('ready', async () => {
         { name: 'ban', description: 'Zbanuj użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas', required: false } ] },
         { name: 'kick', description: 'Wyrzuć użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
         { name: 'mute', description: 'Wycisz użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas (np. 10m, 1h)', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
-        { name: 'głosowanie', description: 'Stwórz nowe głosowanie na dedykowanym kanale', options: [ { name: 'tresc', type: ApplicationCommandOptionType.String, description: 'Treść / Pytanie w głosowaniu', required: true } ] }
+        { name: 'głosowanie', description: 'Stwórz nowe głosowanie na dedykowanym kanale', options: [ { name: 'tresc', type: ApplicationCommandOptionType.String, description: 'Treść / Pytanie w głosowaniu', required: true } ] },
+        { name: 'sad', description: 'Zaciągnij gracza przed oblicze administracji!', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Oskarżony', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co go sądzimy?', required: true } ] }
     ];
     await client.application.commands.set(commands).catch(console.error);
 
@@ -157,14 +162,7 @@ client.once('ready', async () => {
                     .setPlaceholder('Rozwiń listę i wybierz...')
                     .setMinValues(0) 
                     .setMaxValues(AUTOROLES_LIST.length) 
-                    .addOptions(
-                        AUTOROLES_LIST.map(role => 
-                            new StringSelectMenuOptionBuilder()
-                                .setLabel(role.label)
-                                .setDescription(role.description)
-                                .setValue(role.value)
-                        )
-                    );
+                    .addOptions(AUTOROLES_LIST.map(role => new StringSelectMenuOptionBuilder().setLabel(role.label).setDescription(role.description).setValue(role.value)));
 
                 const row = new ActionRowBuilder().addComponents(selectMenu);
                 await rolesChannel.send({ embeds: [rolesEmbed], components: [row] });
@@ -243,10 +241,60 @@ function parseTimeToMs(timeStr) {
 
 client.on('interactionCreate', async interaction => {
     
+    // --- OBSŁUGA FORMULARZY Z SĄDU (MODALE) ---
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith('modal_court_')) {
+            const parts = interaction.customId.split('_');
+            const action = parts[2]; 
+            const userId = parts[3];
+            
+            const czas = interaction.fields.getTextInputValue('czas');
+            const powod = interaction.fields.getTextInputValue('powod');
+            
+            const member = await interaction.guild.members.fetch(userId).catch(() => null);
+            const logChannel = await interaction.guild.channels.fetch(CHANNELS.MOD_LOGS).catch(() => null);
+            
+            if (!member) return interaction.reply({ content: '❌ Ten gracz zdążył uciec z serwera!', ephemeral: true });
+
+            const logEmbed = new EmbedBuilder().setThumbnail(member.user.displayAvatarURL({ dynamic: true })).setTimestamp().setFooter({ text: `Sędzia: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() });
+            
+            await interaction.reply({ content: `✅ Wyrok został wykonany. Kanały sądu znikną za 3 sekundy.`, ephemeral: true });
+
+            if (action === 'ban') {
+                const timeMs = parseTimeToMs(czas);
+                await member.ban({ reason: powod });
+                logEmbed.setColor('#000000').setTitle('🔨 ZBANOWANO GRACZA (SĄD)').setDescription(`**Gracz:** ${member}\n**Powód:** ${powod}\n**Czas:** ${czas || 'Zawsze'}`);
+                if (timeMs) setTimeout(async () => { await interaction.guild.members.unban(member.id).catch(() => {}); }, timeMs);
+                if (logChannel) await logChannel.send({ embeds: [logEmbed] });
+            } 
+            else if (action === 'mute') {
+                const timeMs = parseTimeToMs(czas);
+                if (timeMs) await member.timeout(timeMs, powod);
+                logEmbed.setColor('#00bfff').setTitle('🔇 WYCISZONO GRACZA (SĄD)').setDescription(`**Gracz:** ${member}\n**Powód:** ${powod}\n**Czas:** ${czas}`);
+                if (logChannel) await logChannel.send({ embeds: [logEmbed] });
+                
+                const topic = interaction.channel.topic || '';
+                const roleMatch = topic.match(/roles:([\d,]+)/);
+                if (roleMatch && roleMatch[1]) {
+                    const rolesToRestore = roleMatch[1].split(',');
+                    await member.roles.add(rolesToRestore).catch(() => {});
+                }
+            }
+
+            const topic = interaction.channel.topic || '';
+            const voiceMatch = topic.match(/voice:(\d+)/);
+            if (voiceMatch && voiceMatch[1]) {
+                const vc = interaction.guild.channels.cache.get(voiceMatch[1]);
+                if (vc) await vc.delete().catch(() => {});
+            }
+            setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
+            return;
+        }
+    }
+
     if (interaction.isStringSelectMenu() && interaction.customId === 'autoroles_select') {
         const allAutoroleIds = AUTOROLES_LIST.map(r => r.value);
         const selectedRoles = interaction.values;
-        
         const toAdd = selectedRoles;
         const toRemove = allAutoroleIds.filter(id => !selectedRoles.includes(id));
         
@@ -289,6 +337,53 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply('🔒 Zamykanie ticketa... Kanał zniknie za 3 sekundy.');
             setTimeout(() => { interaction.channel.delete().catch(err => console.error("Nie udało się skasować ticketa", err)); }, 3000);
         }
+
+        if (interaction.customId.startsWith('court_')) {
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Tylko sędzia może wydawać wyroki!', ephemeral: true });
+            
+            const action = interaction.customId.split('_')[1]; 
+            const userId = interaction.customId.split('_')[2];
+            
+            if (action === 'ban' || action === 'mute') {
+                const modal = new ModalBuilder()
+                    .setCustomId(`modal_court_${action}_${userId}`)
+                    .setTitle(action === 'ban' ? 'Wymierz wyrok: BAN' : 'Wymierz wyrok: WYCISZ');
+                
+                const timeInput = new TextInputBuilder()
+                    .setCustomId('czas')
+                    .setLabel(action === 'ban' ? 'Czas (np. 7d, 1h, puste=Zawsze)' : 'Czas (np. 15m, 1h, 7d)')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(action === 'mute'); 
+                
+                const reasonInput = new TextInputBuilder()
+                    .setCustomId('powod')
+                    .setLabel('Powód wyroku')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(true);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(timeInput), new ActionRowBuilder().addComponents(reasonInput));
+                await interaction.showModal(modal);
+            }
+            
+            if (action === 'free') {
+                await interaction.reply('🟢 Uniewinnianie... Zwracam role i zamykam salę na 3 sekundy.');
+                
+                const topic = interaction.channel.topic || '';
+                const roleMatch = topic.match(/roles:([\d,]+)/);
+                if (roleMatch && roleMatch[1]) {
+                    const rolesToRestore = roleMatch[1].split(',');
+                    const member = await interaction.guild.members.fetch(userId).catch(() => null);
+                    if (member) await member.roles.add(rolesToRestore).catch(() => {});
+                }
+                
+                const voiceMatch = topic.match(/voice:(\d+)/);
+                if (voiceMatch && voiceMatch[1]) {
+                    const vc = interaction.guild.channels.cache.get(voiceMatch[1]);
+                    if (vc) await vc.delete().catch(() => {});
+                }
+                setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
+            }
+        }
     }
 
     if (!interaction.isChatInputCommand()) return; 
@@ -303,21 +398,68 @@ client.on('interactionCreate', async interaction => {
 
     const command = interaction.commandName;
     
-    if (command === 'głosowanie') {
-        const tresc = interaction.options?.getString('tresc') || "Brak treści. Spróbuj jeszcze raz wpisując powoli: /głosowanie [tutaj treść]";
-        const voteChannel = interaction.guild.channels.cache.get(CHANNELS.VOTING);
+    // --- KOMENDA: SĄD ---
+    if (command === 'sad') {
+        const targetMember = interaction.options.getMember('uzytkownik');
+        const reason = interaction.options.getString('powod') || 'Brak powodu';
         
+        if (!targetMember) return interaction.reply({ content: '❌ Nie znalazłem użytkownika.', ephemeral: true });
+        if (!targetMember.manageable) return interaction.reply({ content: '❌ Ten użytkownik ma zbyt wysoką rolę (immunitet)!', ephemeral: true });
+
+        const cleanUsername = targetMember.user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        const textChannel = await interaction.guild.channels.create({
+            name: `📝-reichtag-${cleanUsername}`,
+            type: ChannelType.GuildText,
+            parent: CHANNELS.COURT_CATEGORY,
+            permissionOverwrites: [
+                { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                { id: targetMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+            ]
+        });
+
+        const voiceChannel = await interaction.guild.channels.create({
+            name: `🔊-rozprawa-${cleanUsername}`,
+            type: ChannelType.GuildVoice,
+            parent: CHANNELS.COURT_CATEGORY,
+            permissionOverwrites: [
+                { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                { id: targetMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+                { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }
+            ]
+        });
+
+        const savedRoles = [...targetMember.roles.cache.filter(r => r.id !== interaction.guild.id && !r.managed && interaction.guild.members.me.roles.highest.position > r.position).keys()];
+        await textChannel.setTopic(`voice:${voiceChannel.id}|user:${targetMember.id}|roles:${savedRoles.join(',')}`);
+        await targetMember.roles.remove(savedRoles).catch(() => {});
+
+        await interaction.reply({ content: `✅ Sąd został otwarty: <#${textChannel.id}>`, ephemeral: true });
+
+        const courtEmbed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle('⚖️ SALA SĄDOWA')
+            .setDescription(`${targetMember}, zostałeś wezwany na przesłuchanie!\n**Powód wezwania:** ${reason}\n\nTłumacz się. Administracja zadecyduje o Twoim losie.`)
+            .setThumbnail(targetMember.user.displayAvatarURL({ dynamic: true, size: 256 }));
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`court_ban_${targetMember.id}`).setLabel('🔴 ZBANUJ').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`court_mute_${targetMember.id}`).setLabel('🟡 WYCISZ').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`court_free_${targetMember.id}`).setLabel('🟢 UNIEWINNIJ').setStyle(ButtonStyle.Success)
+        );
+
+        await textChannel.send({ content: `${targetMember} @here`, embeds: [courtEmbed], components: [row] });
+        return; 
+    }
+
+    if (command === 'głosowanie') {
+        const tresc = interaction.options?.getString('tresc') || "Brak treści.";
+        const voteChannel = interaction.guild.channels.cache.get(CHANNELS.VOTING);
         if (!voteChannel) return interaction.reply({ content: '❌ Nie znaleziono kanału do głosowań!', ephemeral: true });
 
-        const voteEmbed = new EmbedBuilder()
-            .setColor('#ffd700')
-            .setTitle('📊 Nowe Głosowanie!')
-            .setDescription(`**${tresc}**`)
-            .setFooter({ text: `Autor: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
-            .setTimestamp();
+        const voteEmbed = new EmbedBuilder().setColor('#ffd700').setTitle('📊 Nowe Głosowanie!').setDescription(`**${tresc}**`).setFooter({ text: `Autor: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() }).setTimestamp();
 
         await interaction.reply({ content: '✅ Głosowanie zostało wystawione na odpowiednim kanale.', ephemeral: true });
-        
         const msg = await voteChannel.send({ content: '@everyone', embeds: [voteEmbed] });
         await msg.react('✅');
         await msg.react('❌');
@@ -329,7 +471,7 @@ client.on('interactionCreate', async interaction => {
     const timeString = interaction.options?.getString('czas');
     const logChannel = await interaction.guild.channels.fetch(CHANNELS.MOD_LOGS).catch(() => null);
 
-    if (!targetMember) return interaction.reply({ content: '❌ Nie znalazłem użytkownika do zbanowania/wyrzucenia.', ephemeral: true });
+    if (!targetMember) return interaction.reply({ content: '❌ Nie znalazłem użytkownika.', ephemeral: true });
     if (!targetMember.manageable || !targetMember.bannable) return interaction.reply({ content: '❌ Ten użytkownik ma zbyt wysoką rolę!', ephemeral: true });
 
     const logEmbed = new EmbedBuilder().setThumbnail(targetMember.user.displayAvatarURL({ dynamic: true })).setTimestamp().setFooter({ text: `Przez: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() });
