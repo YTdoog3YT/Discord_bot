@@ -56,7 +56,8 @@ const CHANNELS = {
     VOTING: '1279160696273244373',
     AUTOROLES: '1554380315156291625',
     COURT_CATEGORY: '1256543402749726752',
-    RULES: '1256544920148119572'
+    RULES: '1256544920148119572',
+    ADS: '1554394558349967370' 
 };
 
 // ==========================================
@@ -81,8 +82,8 @@ const REGULAMIN_SERWERA = `
 // ==========================================
 // USTAWIENIA REKLAMY RBX REWARDS
 // ==========================================
-const RBX_REWARDS_LINK = 'https://rbx-rewards.onrender.com/'; // <--- Zmień na link do swojej strony!
-const RBX_REWARDS_LOGO = 'https://github.com/YTdoog3YT/Discord_bot/blob/main/logo.png?raw=true'; // <--- Zmień na swój bezpośredni link z GitHuba (raw.githubusercontent.com/...)
+const RBX_REWARDS_LINK = 'https://rbx-rewards.onrender.com/'; 
+const RBX_REWARDS_LOGO = 'https://github.com/YTdoog3YT/Discord_bot/blob/main/logo.png?raw=true'; 
 
 const AUTOROLES_LIST = [
     { label: '👦 Chłopak', value: '1554381536609050674', description: 'Twoja płeć' },
@@ -96,8 +97,8 @@ const AUTOROLES_LIST = [
     { label: '🔴 Powiadomienia Filmy', value: '1554381803798794351', description: 'Pingi o nowych filmach' }
 ];
 
-const TWITCH_USERNAME = 'TUTAJ_WPISZ_NICK_Z_TWITCHA'; 
-const YOUTUBE_CHANNEL_ID = 'TUTAJ_WPISZ_ID_KANALU_YOUTUBE'; 
+const TWITCH_USERNAME = 'TTV_YTdoog3YT'; 
+const YOUTUBE_CHANNEL_ID = 'UC1QzrYhOlcmsOhZ5BQBZIvA'; 
 
 const parser = new Parser();
 let lastVideoId = ''; 
@@ -155,7 +156,7 @@ client.once('ready', async () => {
         { name: 'mute', description: 'Wycisz użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas (np. 10m, 1h)', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
         { name: 'głosowanie', description: 'Stwórz nowe głosowanie na dedykowanym kanale', options: [ { name: 'tresc', type: ApplicationCommandOptionType.String, description: 'Treść / Pytanie w głosowaniu', required: true } ] },
         { name: 'sad', description: 'Zaciągnij gracza przed oblicze administracji!', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Oskarżony', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co go sądzimy?', required: true } ] },
-        { name: 'reklama', description: 'Wysyła reklamę RBX Rewards z ghost-pingiem @everyone!' } // <--- Nowa komenda
+        { name: 'reklama', description: 'Wysyła reklamę RBX Rewards z ghost-pingiem @everyone na dedykowany kanał!' } 
     ];
     await client.application.commands.set(commands).catch(console.error);
 
@@ -416,7 +417,7 @@ client.on('interactionCreate', async interaction => {
 
     if (!interaction.isChatInputCommand()) return; 
 
-    // Blokada kanałów admina dla większości komend (Oprócz /reklama, bo ją chcesz wysyłać w konkretnym publicznym kanale)
+    // Blokada kanałów admina (komenda /reklama może być wpisana wszędzie, ale i tak leci na dedykowany kanał)
     if (interaction.commandName !== 'reklama' && interaction.channelId !== CHANNELS.ADMIN_CMDS) {
         return interaction.reply({ content: `🚫 Komendy tylko na <#${CHANNELS.ADMIN_CMDS}>!`, ephemeral: true });
     }
@@ -427,27 +428,28 @@ client.on('interactionCreate', async interaction => {
 
     const command = interaction.commandName;
 
-    // --- NOWA KOMENDA: REKLAMA Z GHOST PINGIEM ---
+    // --- KOMENDA: REKLAMA Z GHOST PINGIEM NA DEDYKOWANY KANAŁ ---
     if (command === 'reklama') {
-        // Natychmiastowa odpowiedź żeby komenda nie wisiała jako błąd
-        await interaction.reply({ content: '✅ Reklama w trakcie przygotowania. Będzie ghost ping.', ephemeral: true });
+        const adsChannel = interaction.guild.channels.cache.get(CHANNELS.ADS);
+        if (!adsChannel) return interaction.reply({ content: '❌ Nie znaleziono kanału reklamowego!', ephemeral: true });
+
+        await interaction.reply({ content: `✅ Reklama została wysłana na kanał <#${CHANNELS.ADS}> z ghost pingiem!`, ephemeral: true });
         
-        // Krok 1: Wyślij pinga do wszystkich
-        const pingMsg = await interaction.channel.send('@everyone');
+        // Krok 1: Wysyła ping na dedykowanym kanale reklamowym
+        const pingMsg = await adsChannel.send('@everyone');
         
-        // Krok 2: Skasuj go po 0.5 sekundy (ghost ping zrobiony!)
+        // Krok 2: Kasuje go po 0.5 sekundy (ghost ping)
         setTimeout(() => pingMsg.delete().catch(() => {}), 500);
 
-        // Krok 3: Stwórz profesjonalnego, lśniącego embeda z chwytliwym tekstem
+        // Krok 3: Wysyła piękny embed z reklamą na dedykowany kanał
         const promoEmbed = new EmbedBuilder()
-            .setColor('#10b981') // Piękny zielony kojarzący się z pieniędzmi
+            .setColor('#10b981')
             .setTitle('💸 Brakuje na kebsa albo energola?')
             .setDescription('A może chcesz po prostu trochę dorobić do kieszonkowego bez zbędnego wysiłku?\n\nWpadaj na **RBX Rewards**! Oglądaj filmy, wykonuj super proste zadania i wypłacaj realną gotówkę prosto na swoje konto (PayPal itp).\n\nSzybko, łatwo i bez żadnej ściemy!')
             .setImage(RBX_REWARDS_LOGO)
             .setFooter({ text: 'Zacznij zarabiać już teraz, klikając przycisk poniżej!' })
             .setTimestamp();
 
-        // Krok 4: Zrób klikalny przycisk przenoszący bezpośrednio do WWW
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setLabel('💵 Odbierz Kasę')
@@ -455,8 +457,7 @@ client.on('interactionCreate', async interaction => {
                 .setURL(RBX_REWARDS_LINK)
         );
 
-        // Krok 5: Wyślij to na kanał!
-        await interaction.channel.send({ embeds: [promoEmbed], components: [row] });
+        await adsChannel.send({ embeds: [promoEmbed], components: [row] });
         return;
     }
     
