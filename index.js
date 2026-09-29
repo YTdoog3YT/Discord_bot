@@ -56,12 +56,11 @@ const CHANNELS = {
     VOTING: '1279160696273244373',
     AUTOROLES: '1554380315156291625',
     COURT_CATEGORY: '1256543402749726752',
-    RULES: '1256544920148119572' // Kanał regulaminu
+    RULES: '1256544920148119572'
 };
 
 // ==========================================
-// REGULAMIN SERWERA (ŁATWA EDYCJA)
-// Zmieniaj tekst poniżej. Żeby dodać nową linijkę, po prostu pisz w nowej linii.
+// REGULAMIN SERWERA
 // ==========================================
 const REGULAMIN_SERWERA = `
 **Zasady Ogólne i Kanały Tekstowe (Czat)**
@@ -78,6 +77,12 @@ const REGULAMIN_SERWERA = `
 🔊 Nie skaczemy po kanałach bez sensu (zero channel hoppingu) żeby celowo kogoś wkurwiać.
 🔊 Jeśli wbijasz komuś na kanał, zachowaj kulturę.
 `;
+
+// ==========================================
+// USTAWIENIA REKLAMY RBX REWARDS
+// ==========================================
+const RBX_REWARDS_LINK = 'https://rbx-rewards.onrender.com/'; // <--- Zmień na link do swojej strony!
+const RBX_REWARDS_LOGO = 'https://github.com/YTdoog3YT/Discord_bot/blob/main/logo.png?raw=true'; // <--- Zmień na swój bezpośredni link z GitHuba (raw.githubusercontent.com/...)
 
 const AUTOROLES_LIST = [
     { label: '👦 Chłopak', value: '1554381536609050674', description: 'Twoja płeć' },
@@ -149,27 +154,19 @@ client.once('ready', async () => {
         { name: 'kick', description: 'Wyrzuć użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
         { name: 'mute', description: 'Wycisz użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas (np. 10m, 1h)', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
         { name: 'głosowanie', description: 'Stwórz nowe głosowanie na dedykowanym kanale', options: [ { name: 'tresc', type: ApplicationCommandOptionType.String, description: 'Treść / Pytanie w głosowaniu', required: true } ] },
-        { name: 'sad', description: 'Zaciągnij gracza przed oblicze administracji!', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Oskarżony', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co go sądzimy?', required: true } ] }
+        { name: 'sad', description: 'Zaciągnij gracza przed oblicze administracji!', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Oskarżony', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co go sądzimy?', required: true } ] },
+        { name: 'reklama', description: 'Wysyła reklamę RBX Rewards z ghost-pingiem @everyone!' } // <--- Nowa komenda
     ];
     await client.application.commands.set(commands).catch(console.error);
 
-    // --- AUTOMATYCZNY PANEL REGULAMINU ---
     try {
         const rulesChannel = client.channels.cache.get(CHANNELS.RULES);
         if (rulesChannel) {
             const messages = await rulesChannel.messages.fetch({ limit: 10 });
             const hasRules = messages.some(m => m.author.id === client.user.id && m.embeds[0]?.title === '📜 Regulamin Serwera');
-            
             if (!hasRules) {
-                const rulesEmbed = new EmbedBuilder()
-                    .setColor('#ff4757')
-                    .setTitle('📜 Regulamin Serwera')
-                    .setDescription(REGULAMIN_SERWERA)
-                    .setFooter({ text: 'Nieznajomość regulaminu nie zwalnia z jego przestrzegania!' })
-                    .setTimestamp();
-                
+                const rulesEmbed = new EmbedBuilder().setColor('#ff4757').setTitle('📜 Regulamin Serwera').setDescription(REGULAMIN_SERWERA).setFooter({ text: 'Nieznajomość regulaminu nie zwalnia z jego przestrzegania!' }).setTimestamp();
                 await rulesChannel.send({ embeds: [rulesEmbed] });
-                console.log('✅ Utworzono panel regulaminu!');
             }
         }
     } catch (err) { console.error('Błąd z panelem regulaminu:', err); }
@@ -192,20 +189,9 @@ client.once('ready', async () => {
         if (rolesChannel) {
             const messages = await rolesChannel.messages.fetch({ limit: 10 });
             const hasRolesPanel = messages.some(m => m.author.id === client.user.id && m.components.length > 0 && m.embeds[0]?.title === '🎭 Wybierz swoje role');
-            
             if (!hasRolesPanel) {
-                const rolesEmbed = new EmbedBuilder()
-                    .setColor('#9b59b6')
-                    .setTitle('🎭 Wybierz swoje role')
-                    .setDescription('Otwórz menu poniżej i zaznacz role, które chcesz otrzymać. Możesz zaznaczyć **kilka naraz**! Jeśli chcesz zdjąć z siebie rolę, po prostu ją odznacz.');
-                
-                const selectMenu = new StringSelectMenuBuilder()
-                    .setCustomId('autoroles_select')
-                    .setPlaceholder('Rozwiń listę i wybierz...')
-                    .setMinValues(0) 
-                    .setMaxValues(AUTOROLES_LIST.length) 
-                    .addOptions(AUTOROLES_LIST.map(role => new StringSelectMenuOptionBuilder().setLabel(role.label).setDescription(role.description).setValue(role.value)));
-
+                const rolesEmbed = new EmbedBuilder().setColor('#9b59b6').setTitle('🎭 Wybierz swoje role').setDescription('Otwórz menu poniżej i zaznacz role, które chcesz otrzymać. Możesz zaznaczyć **kilka naraz**! Jeśli chcesz zdjąć z siebie rolę, po prostu ją odznacz.');
+                const selectMenu = new StringSelectMenuBuilder().setCustomId('autoroles_select').setPlaceholder('Rozwiń listę i wybierz...').setMinValues(0).setMaxValues(AUTOROLES_LIST.length).addOptions(AUTOROLES_LIST.map(role => new StringSelectMenuOptionBuilder().setLabel(role.label).setDescription(role.description).setValue(role.value)));
                 const row = new ActionRowBuilder().addComponents(selectMenu);
                 await rolesChannel.send({ embeds: [rolesEmbed], components: [row] });
             }
@@ -283,7 +269,7 @@ function parseTimeToMs(timeStr) {
 
 client.on('interactionCreate', async interaction => {
     
-    // --- OBSŁUGA FORMULARZY Z SĄDU (MODALE) ---
+    // --- OBSŁUGA MODALI (SĄD) ---
     if (interaction.isModalSubmit()) {
         if (interaction.customId.startsWith('modal_court_')) {
             const parts = interaction.customId.split('_');
@@ -430,7 +416,8 @@ client.on('interactionCreate', async interaction => {
 
     if (!interaction.isChatInputCommand()) return; 
 
-    if (interaction.channelId !== CHANNELS.ADMIN_CMDS) {
+    // Blokada kanałów admina dla większości komend (Oprócz /reklama, bo ją chcesz wysyłać w konkretnym publicznym kanale)
+    if (interaction.commandName !== 'reklama' && interaction.channelId !== CHANNELS.ADMIN_CMDS) {
         return interaction.reply({ content: `🚫 Komendy tylko na <#${CHANNELS.ADMIN_CMDS}>!`, ephemeral: true });
     }
     
@@ -439,8 +426,40 @@ client.on('interactionCreate', async interaction => {
     }
 
     const command = interaction.commandName;
+
+    // --- NOWA KOMENDA: REKLAMA Z GHOST PINGIEM ---
+    if (command === 'reklama') {
+        // Natychmiastowa odpowiedź żeby komenda nie wisiała jako błąd
+        await interaction.reply({ content: '✅ Reklama w trakcie przygotowania. Będzie ghost ping.', ephemeral: true });
+        
+        // Krok 1: Wyślij pinga do wszystkich
+        const pingMsg = await interaction.channel.send('@everyone');
+        
+        // Krok 2: Skasuj go po 0.5 sekundy (ghost ping zrobiony!)
+        setTimeout(() => pingMsg.delete().catch(() => {}), 500);
+
+        // Krok 3: Stwórz profesjonalnego, lśniącego embeda z chwytliwym tekstem
+        const promoEmbed = new EmbedBuilder()
+            .setColor('#10b981') // Piękny zielony kojarzący się z pieniędzmi
+            .setTitle('💸 Brakuje na kebsa albo energola?')
+            .setDescription('A może chcesz po prostu trochę dorobić do kieszonkowego bez zbędnego wysiłku?\n\nWpadaj na **RBX Rewards**! Oglądaj filmy, wykonuj super proste zadania i wypłacaj realną gotówkę prosto na swoje konto (PayPal itp).\n\nSzybko, łatwo i bez żadnej ściemy!')
+            .setImage(RBX_REWARDS_LOGO)
+            .setFooter({ text: 'Zacznij zarabiać już teraz, klikając przycisk poniżej!' })
+            .setTimestamp();
+
+        // Krok 4: Zrób klikalny przycisk przenoszący bezpośrednio do WWW
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setLabel('💵 Odbierz Kasę')
+                .setStyle(ButtonStyle.Link)
+                .setURL(RBX_REWARDS_LINK)
+        );
+
+        // Krok 5: Wyślij to na kanał!
+        await interaction.channel.send({ embeds: [promoEmbed], components: [row] });
+        return;
+    }
     
-    // --- KOMENDA: SĄD ---
     if (command === 'sad') {
         const targetMember = interaction.options.getMember('uzytkownik');
         const reason = interaction.options.getString('powod') || 'Brak powodu';
