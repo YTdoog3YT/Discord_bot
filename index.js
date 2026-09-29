@@ -8,7 +8,9 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    ChannelType
+    ChannelType,
+    StringSelectMenuBuilder,
+    StringSelectMenuOptionBuilder
 } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
@@ -19,7 +21,6 @@ const app = express();
 app.get('/', (req, res) => res.send('Kombajn działa i ma się dobrze!'));
 app.listen(process.env.PORT || 3000, () => console.log('🌐 Serwer podtrzymujący odpalony!'));
 
-// Inicjalizacja bota (Dodano GuildPresences potrzebne do sprawdzania kto jest online!)
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -31,7 +32,6 @@ const client = new Client({
     ]
 });
 
-// Baza danych
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log('✅ Połączono z bazą MongoDB!'))
     .catch(err => console.error('❌ Błąd bazy danych:', err));
@@ -45,17 +45,33 @@ const CHANNELS = {
     STREAMS: '1256545089606516768',
     TICKETS: '1256545036112232499',
     TICKETS_CATEGORY: '1554373278418862150',
-    // ETAP 3, 4, 5 - STATYSTYKI
     STATS_TIME: '1256543516734128159',
     STATS_ONLINE: '1256543578281480265',
     STATS_ALL_REAL: '1275939716583129179',
     STATS_DATE: '1275939563415670926',
-    STATS_BANS: '1275939641324732447'
+    STATS_BANS: '1275939641324732447',
+    // ETAP 6 i 7
+    VOTING: '1279160696273244373',
+    AUTOROLES: '1554380315156291625'
 };
 
 // ==========================================
-// USTAWIENIA TWÓRCY 
+// KONFIGURACJA AUTORÓL (ŁATWE DODAWANIE)
+// Jeśli chcesz dodać rolę, po prostu dopisz tu linijkę!
 // ==========================================
+const AUTOROLES_LIST = [
+    { label: '👦 Chłopak', value: '1554381536609050674', description: 'Twoja płeć' },
+    { label: '👧 Dziewczyna', value: '1554381571799130132', description: 'Twoja płeć' },
+    { label: '🔞 18+', value: '1554381848837230662', description: 'Mam ukończone 18 lat' },
+    { label: '👶 18-', value: '1554381868126838924', description: 'Nie mam jeszcze 18 lat' },
+    { label: '🎮 PlayStation', value: '1554381596373819392', description: 'Gram na konsoli PS' },
+    { label: '🟢 Xbox', value: '1554381645522534400', description: 'Gram na konsoli Xbox' },
+    { label: '💻 PC', value: '1554381663969087528', description: 'Gram na komputerze' },
+    { label: '🟣 Powiadomienia Streamy', value: '1554381779094474793', description: 'Pingi o nowych live' },
+    { label: '🔴 Powiadomienia Filmy', value: '1554381803798794351', description: 'Pingi o nowych filmach' }
+];
+
+// USTAWIENIA TWÓRCY
 const TWITCH_USERNAME = 'TUTAJ_WPISZ_NICK_Z_TWITCHA'; 
 const YOUTUBE_CHANNEL_ID = 'TUTAJ_WPISZ_ID_KANALU_YOUTUBE'; 
 
@@ -74,28 +90,20 @@ async function getTwitchToken() {
     } catch (err) { console.error('❌ Błąd pobierania tokenu Twitch:', err); }
 }
 
-// ==========================================
-// FUNKCJA AKTUALIZUJĄCA STATYSTYKI SERWERA
-// ==========================================
 async function updateServerStats() {
     try {
-        const guild = client.guilds.cache.first(); // Pobiera pierwszy serwer, na którym jest bot
+        const guild = client.guilds.cache.first(); 
         if (!guild) return;
 
-        await guild.members.fetch(); // Wymusza pobranie wszystkich członków do pamięci bota
-
-        // Obliczenia
+        await guild.members.fetch(); 
         const realUsers = guild.members.cache.filter(m => !m.user.bot);
         const onlineUsers = realUsers.filter(m => m.presence && m.presence.status !== 'offline' && m.presence.status !== 'invisible');
-        
         const bans = await guild.bans.fetch();
-        const bansCount = bans.size;
-
+        
         const now = new Date();
         const timeString = now.toLocaleTimeString('pl-PL', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit' });
         const dateString = now.toLocaleDateString('pl-PL', { timeZone: 'Europe/Warsaw' });
 
-        // Pobieranie kanałów i zmiana nazw (zmienia tylko jeśli nazwa jest inna, żeby oszczędzać limity API)
         const channelTime = guild.channels.cache.get(CHANNELS.STATS_TIME);
         if (channelTime && channelTime.name !== `⌚ Godzina: ${timeString}`) await channelTime.setName(`⌚ Godzina: ${timeString}`);
 
@@ -109,12 +117,9 @@ async function updateServerStats() {
         if (channelOnline && channelOnline.name !== `🟢 Online: ${onlineUsers.size}`) await channelOnline.setName(`🟢 Online: ${onlineUsers.size}`);
 
         const channelBans = guild.channels.cache.get(CHANNELS.STATS_BANS);
-        if (channelBans && channelBans.name !== `🔨 Zbanowani: ${bansCount}`) await channelBans.setName(`🔨 Zbanowani: ${bansCount}`);
+        if (channelBans && channelBans.name !== `🔨 Zbanowani: ${bans.size}`) await channelBans.setName(`🔨 Zbanowani: ${bans.size}`);
 
-        console.log(`📊 Zaktualizowano statystyki serwera (Online: ${onlineUsers.size}/${realUsers.size}, Czas: ${timeString})`);
-    } catch (err) {
-        console.error('❌ Błąd aktualizacji statystyk:', err);
-    }
+    } catch (err) { console.error('❌ Błąd aktualizacji statystyk:', err); }
 }
 
 client.once('ready', async () => {
@@ -123,7 +128,9 @@ client.once('ready', async () => {
     const commands = [
         { name: 'ban', description: 'Zbanuj użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Za co?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas', required: false } ] },
         { name: 'kick', description: 'Wyrzuć użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
-        { name: 'mute', description: 'Wycisz użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas (np. 10m, 1h)', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] }
+        { name: 'mute', description: 'Wycisz użytkownika', options: [ { name: 'uzytkownik', type: ApplicationCommandOptionType.User, description: 'Kogo?', required: true }, { name: 'czas', type: ApplicationCommandOptionType.String, description: 'Czas (np. 10m, 1h)', required: true }, { name: 'powod', type: ApplicationCommandOptionType.String, description: 'Powód', required: false } ] },
+        // --- NOWA KOMENDA DO GŁOSOWAŃ ---
+        { name: 'głosowanie', description: 'Stwórz nowe głosowanie na dedykowanym kanale', options: [ { name: 'tresc', type: ApplicationCommandOptionType.String, description: 'Treść / Pytanie w głosowaniu', required: true } ] }
     ];
     await client.application.commands.set(commands).catch(console.error);
 
@@ -132,36 +139,53 @@ client.once('ready', async () => {
         const ticketChannel = client.channels.cache.get(CHANNELS.TICKETS);
         if (ticketChannel) {
             const messages = await ticketChannel.messages.fetch({ limit: 10 });
-            const hasPanel = messages.some(m => m.author.id === client.user.id && m.components.length > 0);
-            
+            const hasPanel = messages.some(m => m.author.id === client.user.id && m.components.length > 0 && m.embeds[0]?.title === '🎫 Pomoc i Wsparcie');
             if (!hasPanel) {
-                const ticketEmbed = new EmbedBuilder()
-                    .setColor('#2b2d31')
-                    .setTitle('🎫 Pomoc i Wsparcie')
-                    .setDescription('Potrzebujesz pomocy administracji? Kliknij przycisk poniżej, aby utworzyć prywatny kanał rozmowy.\n\n⚠️ **Pamiętaj:** Możesz mieć otwarty tylko **1** ticket naraz!');
-                
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('create_ticket')
-                        .setLabel('📩 Utwórz Ticket')
-                        .setStyle(ButtonStyle.Success)
-                );
-                
+                const ticketEmbed = new EmbedBuilder().setColor('#2b2d31').setTitle('🎫 Pomoc i Wsparcie').setDescription('Potrzebujesz pomocy administracji? Kliknij przycisk poniżej, aby utworzyć prywatny kanał rozmowy.\n\n⚠️ **Pamiętaj:** Możesz mieć otwarty tylko **1** ticket naraz!');
+                const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('create_ticket').setLabel('📩 Utwórz Ticket').setStyle(ButtonStyle.Success));
                 await ticketChannel.send({ embeds: [ticketEmbed], components: [row] });
-                console.log('✅ Utworzono automatyczny panel ticketów!');
             }
         }
     } catch (err) { console.error('Błąd z panelem ticketów:', err); }
 
-    // Pierwsze uruchomienie statystyk od razu po starcie
-    updateServerStats();
+    // --- AUTOMATYCZNY PANEL AUTORÓL ---
+    try {
+        const rolesChannel = client.channels.cache.get(CHANNELS.AUTOROLES);
+        if (rolesChannel) {
+            const messages = await rolesChannel.messages.fetch({ limit: 10 });
+            // Sprawdza czy jest już panel autoról
+            const hasRolesPanel = messages.some(m => m.author.id === client.user.id && m.components.length > 0 && m.embeds[0]?.title === '🎭 Wybierz swoje role');
+            
+            if (!hasRolesPanel) {
+                const rolesEmbed = new EmbedBuilder()
+                    .setColor('#9b59b6')
+                    .setTitle('🎭 Wybierz swoje role')
+                    .setDescription('Otwórz menu poniżej i zaznacz role, które chcesz otrzymać. Możesz zaznaczyć **kilka naraz**! Jeśli chcesz zdjąć z siebie rolę, po prostu ją odznacz.');
+                
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('autoroles_select')
+                    .setPlaceholder('Rozwiń listę i wybierz...')
+                    .setMinValues(0) // Pozwala graczom usunąć wszystkie role jeśli chcą
+                    .setMaxValues(AUTOROLES_LIST.length) // Pozwala zaznaczyć wszystkie na raz
+                    .addOptions(
+                        AUTOROLES_LIST.map(role => 
+                            new StringSelectMenuOptionBuilder()
+                                .setLabel(role.label)
+                                .setDescription(role.description)
+                                .setValue(role.value)
+                        )
+                    );
 
-    // --- PĘTLE (Youtube, Twitch, Statystyki) ---
-    
-    // Pętla statystyk (co 6 minut = 360000 ms)
+                const row = new ActionRowBuilder().addComponents(selectMenu);
+                await rolesChannel.send({ embeds: [rolesEmbed], components: [row] });
+                console.log('✅ Utworzono nowy panel autoról!');
+            }
+        }
+    } catch (err) { console.error('Błąd z panelem autoról:', err); }
+
+    updateServerStats();
     setInterval(updateServerStats, 360000); 
 
-    // Pętla YouTube (co 5 minut)
     setInterval(async () => {
         try {
             if (YOUTUBE_CHANNEL_ID.includes('TUTAJ_WPISZ')) return; 
@@ -182,7 +206,6 @@ client.once('ready', async () => {
         } catch (err) { console.error('Błąd YouTube:', err.message); }
     }, 300000); 
 
-    // Pętla Twitch (co 3 minuty)
     setInterval(async () => {
         try {
             if (!process.env.TWITCH_CLIENT_ID || TWITCH_USERNAME.includes('TUTAJ_WPISZ')) return;
@@ -205,7 +228,6 @@ client.once('ready', async () => {
     }, 180000); 
 });
 
-// POWITANIA I POŻEGNANIA
 client.on('guildMemberAdd', member => {
     const channel = member.guild.channels.cache.get(CHANNELS.WELCOME);
     if (!channel) return;
@@ -230,20 +252,36 @@ function parseTimeToMs(timeStr) {
     return null;
 }
 
-// ==========================================
-// OBSŁUGA INTERAKCJI (KOMENDY I PRZYCISKI)
-// ==========================================
 client.on('interactionCreate', async interaction => {
     
-    if (interaction.isButton()) {
+    // --- OBSŁUGA AUTORÓL (ROZWIJANE MENU) ---
+    if (interaction.isStringSelectMenu() && interaction.customId === 'autoroles_select') {
+        // Wszystkie możliwe ID ról do rozdania przez bota
+        const allAutoroleIds = AUTOROLES_LIST.map(r => r.value);
+        // ID ról, które gracz aktualnie zaznaczył
+        const selectedRoles = interaction.values;
         
+        // Co dodać: to co zaznaczył
+        const toAdd = selectedRoles;
+        // Co zabrać: role z listy autoról, których NIE zaznaczył
+        const toRemove = allAutoroleIds.filter(id => !selectedRoles.includes(id));
+        
+        try {
+            await interaction.member.roles.add(toAdd);
+            await interaction.member.roles.remove(toRemove);
+            await interaction.reply({ content: '✅ Role zaktualizowane pomyślnie!', ephemeral: true });
+        } catch (err) {
+            console.error('Błąd nadawania ról:', err);
+            await interaction.reply({ content: '❌ Wystąpił błąd. Upewnij się, że rola bota jest WYŻEJ na liście niż role, które próbujesz otrzymać!', ephemeral: true });
+        }
+        return;
+    }
+
+    if (interaction.isButton()) {
         if (interaction.customId === 'create_ticket') {
             const ticketName = `ticket-${interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-            
             const existingChannel = interaction.guild.channels.cache.find(c => c.name === ticketName);
-            if (existingChannel) {
-                return interaction.reply({ content: `❌ Masz już otwarty ticket: <#${existingChannel.id}>`, ephemeral: true });
-            }
+            if (existingChannel) return interaction.reply({ content: `❌ Masz już otwarty ticket: <#${existingChannel.id}>`, ephemeral: true });
 
             const ticketChannel = await interaction.guild.channels.create({
                 name: ticketName,
@@ -257,32 +295,15 @@ client.on('interactionCreate', async interaction => {
             });
 
             await interaction.reply({ content: `✅ Twój ticket został utworzony: <#${ticketChannel.id}>`, ephemeral: true });
-
-            const insideEmbed = new EmbedBuilder()
-                .setColor('#ffaa00')
-                .setTitle('🎫 Nowy Ticket')
-                .setDescription(`Witaj ${interaction.user}!\n\nOpisz swój problem, a administracja wkrótce Ci pomoże. Tylko Ty i administracja macie wgląd w ten kanał.`)
-                .setFooter({ text: 'Kliknięcie przycisku "Zamknij" bezpowrotnie skasuje ten kanał.' });
-            
-            const closeRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel('🔒 Zamknij Ticket (Tylko Admin)')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
+            const insideEmbed = new EmbedBuilder().setColor('#ffaa00').setTitle('🎫 Nowy Ticket').setDescription(`Witaj ${interaction.user}!\n\nOpisz swój problem, a administracja wkrótce Ci pomoże. Tylko Ty i administracja macie wgląd w ten kanał.`).setFooter({ text: 'Kliknięcie przycisku "Zamknij" bezpowrotnie skasuje ten kanał.' });
+            const closeRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Zamknij Ticket (Tylko Admin)').setStyle(ButtonStyle.Danger));
             await ticketChannel.send({ content: `@here`, embeds: [insideEmbed], components: [closeRow] });
         }
 
         if (interaction.customId === 'close_ticket') {
-            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-                return interaction.reply({ content: '❌ Tylko administracja może zamknąć ten ticket!', ephemeral: true });
-            }
-
+            if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Tylko administracja może zamknąć ten ticket!', ephemeral: true });
             await interaction.reply('🔒 Zamykanie ticketa... Kanał zniknie za 3 sekundy.');
-            setTimeout(() => {
-                interaction.channel.delete().catch(err => console.error("Nie udało się skasować ticketa", err));
-            }, 3000);
+            setTimeout(() => { interaction.channel.delete().catch(err => console.error("Nie udało się skasować ticketa", err)); }, 3000);
         }
     }
 
@@ -291,6 +312,31 @@ client.on('interactionCreate', async interaction => {
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Brak uprawnień!', ephemeral: true });
 
         const command = interaction.commandName;
+        
+        // --- OBSŁUGA GŁOSOWANIA ---
+        if (command === 'głosowanie') {
+            const tresc = interaction.options.getString('tresc');
+            const voteChannel = interaction.guild.channels.cache.get(CHANNELS.VOTING);
+            
+            if (!voteChannel) return interaction.reply({ content: '❌ Nie znaleziono kanału do głosowań!', ephemeral: true });
+
+            const voteEmbed = new EmbedBuilder()
+                .setColor('#ffd700')
+                .setTitle('📊 Nowe Głosowanie!')
+                .setDescription(`**${tresc}**`)
+                .setFooter({ text: `Autor: ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+                .setTimestamp();
+
+            await interaction.reply({ content: '✅ Głosowanie zostało wystawione na odpowiednim kanale.', ephemeral: true });
+            const msg = await voteChannel.send({ content: '@everyone', embeds: [voteEmbed] });
+            
+            // Dodawanie reakcji
+            await msg.react('✅');
+            await msg.react('❌');
+            return;
+        }
+
+        // --- MODERACJA ---
         const targetMember = interaction.options.getMember('uzytkownik');
         const reason = interaction.options.getString('powod') || 'Brak powodu';
         const timeString = interaction.options.getString('czas');
