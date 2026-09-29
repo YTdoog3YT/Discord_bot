@@ -5,10 +5,10 @@ const {
     EmbedBuilder, 
     ApplicationCommandOptionType,
     PermissionFlagsBits,
-    ActionRowBuilder, // Dodane pod przyciski
-    ButtonBuilder,    // Dodane pod przyciski
-    ButtonStyle,      // Dodane pod przyciski
-    ChannelType       // Dodane pod tickety
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ChannelType
 } = require('discord.js');
 const mongoose = require('mongoose');
 const express = require('express');
@@ -42,7 +42,8 @@ const CHANNELS = {
     MOD_LOGS: '1256544115517292616',
     YT_VIDEO: '1256545068349915217',
     STREAMS: '1256545089606516768',
-    TICKETS: '1256545036112232499' // <--- NOWY KANAŁ NA TICKETY
+    TICKETS: '1256545036112232499',
+    TICKETS_CATEGORY: '1554373278418862150' // <--- Kategoria dla nowych ticketów
 };
 
 // ==========================================
@@ -80,7 +81,6 @@ client.once('ready', async () => {
     try {
         const ticketChannel = client.channels.cache.get(CHANNELS.TICKETS);
         if (ticketChannel) {
-            // Sprawdza ostatnie wiadomości, żeby nie duplikować panelu
             const messages = await ticketChannel.messages.fetch({ limit: 10 });
             const hasPanel = messages.some(m => m.author.id === client.user.id && m.components.length > 0);
             
@@ -88,8 +88,7 @@ client.once('ready', async () => {
                 const ticketEmbed = new EmbedBuilder()
                     .setColor('#2b2d31')
                     .setTitle('🎫 Pomoc i Wsparcie')
-                    .setDescription('Potrzebujesz pomocy administracji? Kliknij przycisk poniżej, aby utworzyć prywatny kanał rozmowy.\n\n⚠️ **Pamiętaj:** Możesz mieć otwarty tylko **1** ticket naraz!')
-                    .setImage('https://i.imgur.com/8Qj8M64.png'); // Pasek ozdobny (opcjonalnie)
+                    .setDescription('Potrzebujesz pomocy administracji? Kliknij przycisk poniżej, aby utworzyć prywatny kanał rozmowy.\n\n⚠️ **Pamiętaj:** Możesz mieć otwarty tylko **1** ticket naraz!');
                 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -104,7 +103,7 @@ client.once('ready', async () => {
         }
     } catch (err) { console.error('Błąd z panelem ticketów:', err); }
 
-    // PĘTLE TWITCH I YT - Zostają bez zmian
+    // --- PĘTLA YOUTUBE (co 5 minut) ---
     setInterval(async () => {
         try {
             if (YOUTUBE_CHANNEL_ID.includes('TUTAJ_WPISZ')) return; 
@@ -125,6 +124,7 @@ client.once('ready', async () => {
         } catch (err) { console.error('Błąd YouTube:', err.message); }
     }, 300000); 
 
+    // --- PĘTLA TWITCH (co 3 minuty) ---
     setInterval(async () => {
         try {
             if (!process.env.TWITCH_CLIENT_ID || TWITCH_USERNAME.includes('TUTAJ_WPISZ')) return;
@@ -147,7 +147,7 @@ client.once('ready', async () => {
     }, 180000); 
 });
 
-// POWITANIA, POŻEGNANIA
+// POWITANIA I POŻEGNANIA
 client.on('guildMemberAdd', member => {
     const channel = member.guild.channels.cache.get(CHANNELS.WELCOME);
     if (!channel) return;
@@ -173,7 +173,7 @@ function parseTimeToMs(timeStr) {
 }
 
 // ==========================================
-// OBSŁUGA INTERAKCJI (KOMENDY SLASH I PRZYCISKI TICKETÓW)
+// OBSŁUGA INTERAKCJI (KOMENDY I PRZYCISKI)
 // ==========================================
 client.on('interactionCreate', async interaction => {
     
@@ -181,29 +181,27 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
         
         if (interaction.customId === 'create_ticket') {
-            // Generuje nazwę kanału (np. ticket-brian)
             const ticketName = `ticket-${interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
             
-            // Sprawdza czy kanał już istnieje
             const existingChannel = interaction.guild.channels.cache.find(c => c.name === ticketName);
             if (existingChannel) {
                 return interaction.reply({ content: `❌ Masz już otwarty ticket: <#${existingChannel.id}>`, ephemeral: true });
             }
 
-            // Tworzy prywatny kanał
+            // Tworzy prywatny kanał w odpowiedniej kategorii
             const ticketChannel = await interaction.guild.channels.create({
                 name: ticketName,
                 type: ChannelType.GuildText,
+                parent: CHANNELS.TICKETS_CATEGORY, // <--- Tutaj dodaliśmy kategorię!
                 permissionOverwrites: [
-                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, // Chowa dla wszystkich
-                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }, // Widzi gracz
-                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] } // Widzi bot (Admini widzą z automatu)
+                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, 
+                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }, 
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
                 ]
             });
 
             await interaction.reply({ content: `✅ Twój ticket został utworzony: <#${ticketChannel.id}>`, ephemeral: true });
 
-            // Wysyła wiadomość wewnątrz nowego ticketa
             const insideEmbed = new EmbedBuilder()
                 .setColor('#ffaa00')
                 .setTitle('🎫 Nowy Ticket')
@@ -221,7 +219,6 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.customId === 'close_ticket') {
-            // Blokada - tylko Admin może zamknąć!
             if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
                 return interaction.reply({ content: '❌ Tylko administracja może zamknąć ten ticket!', ephemeral: true });
             }
